@@ -6,6 +6,15 @@ import { sessionStore } from '../store/sessions.js';
 import { PRODUCTS } from '../data/products.js';
 import type { CheckoutSession, LineItem, Total } from '../types/ucp.js';
 
+type HydrationCode = 'UCP_OUT_OF_STOCK' | 'UCP_UNKNOWN_PRODUCT';
+
+class HydrationError extends Error {
+  constructor(public code: HydrationCode, public productId: string) {
+    super(`${code}:${productId}`);
+    this.name = 'HydrationError';
+  }
+}
+
 export const checkoutSessionsRouter = Router();
 
 const TAX_RATE = 0.05;
@@ -28,16 +37,16 @@ interface InputLineItem {
   quantity: { original: number; total: number; fulfilled: number };
 }
 
-function hydrateLineItems(input: InputLineItem[]): LineItem[] {
+function hydrateLineItems(input: InputLineItem[], currency: string): LineItem[] {
   return input.map((li, i) => {
     const p = PRODUCTS.find((x) => x.id === li.item.id);
-    if (!p) throw new Error(`unknown product ${li.item.id}`);
-    if (!p.in_stock) throw new Error(`out_of_stock:${p.id}`);
+    if (!p) throw new HydrationError('UCP_UNKNOWN_PRODUCT', li.item.id);
+    if (!p.in_stock) throw new HydrationError('UCP_OUT_OF_STOCK', li.item.id);
     return {
       id: `li_${i + 1}`,
       item: { id: p.id, title: p.title, price: p.price, image_url: p.image_url },
       quantity: li.quantity,
-      totals: [{ type: 'subtotal', amount: p.price * li.quantity.total, currency: 'TWD' }],
+      totals: [{ type: 'subtotal', amount: p.price * li.quantity.total, currency }],
     };
   });
 }
@@ -47,9 +56,25 @@ checkoutSessionsRouter.post(
   requireUcpHeaders,
   idempotencyMiddleware,
   (req, res) => {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'request body must be a JSON object', severity: 'high' }],
+      });
+    }
+    const { currency = 'TWD', line_items = [] } = body as { currency?: string; line_items?: unknown };
+    if (!Array.isArray(line_items)) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'line_items must be an array', severity: 'high' }],
+      });
+    }
+    if (typeof currency !== 'string' || currency.length === 0) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'currency must be a non-empty string', severity: 'high' }],
+      });
+    }
     try {
-      const { currency = 'TWD', line_items = [] } = req.body ?? {};
-      const items = hydrateLineItems(line_items);
+      const items = hydrateLineItems(line_items as InputLineItem[], currency);
       const session: CheckoutSession = {
         ucp: { version: '1.0', capabilities: ['embedded_checkout'], payment_handlers: ['google-pay-mock'] },
         id: `chk_${randomUUID().slice(0, 8)}`,
@@ -62,15 +87,23 @@ checkoutSessionsRouter.post(
         _created_at: new Date().toISOString(),
       };
       sessionStore.put(session);
-      res.status(201).json(session);
+      return res.status(201).json(session);
     } catch (e) {
+      if (e instanceof HydrationError) {
+        return res.status(400).json({
+          messages: [{
+            type: 'error',
+            code: e.code,
+            content: e.code === 'UCP_OUT_OF_STOCK' ? 'product is out of stock' : 'unknown product',
+            path: `line_items[].item.id=${e.productId}`,
+            severity: 'high',
+          }],
+        });
+      }
       const err = e as Error;
-      const code = err.message.startsWith('out_of_stock')
-        ? 'UCP_OUT_OF_STOCK'
-        : err.message.startsWith('unknown product')
-        ? 'UCP_UNKNOWN_PRODUCT'
-        : 'UCP_BAD_REQUEST';
-      res.status(400).json({ messages: [{ type: 'error', code, content: err.message, severity: 'high' }] });
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: err.message, severity: 'high' }],
+      });
     }
   },
 );
