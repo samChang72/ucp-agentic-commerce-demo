@@ -5,7 +5,7 @@ import { idempotencyMiddleware } from '../middleware/idempotency.js';
 import { sessionStore } from '../store/sessions.js';
 import { PRODUCTS } from '../data/products.js';
 import type { CheckoutSession, LineItem, Total } from '../types/ucp.js';
-import { assertTransition } from '../lib/stateMachine.js';
+import { assertTransition, IllegalTransitionError } from '../lib/stateMachine.js';
 
 type HydrationCode = 'UCP_OUT_OF_STOCK' | 'UCP_UNKNOWN_PRODUCT';
 
@@ -139,14 +139,29 @@ checkoutSessionsRouter.put('/checkout-sessions/:id', requireUcpHeaders, idempote
     });
   }
   const { buyer, fulfillment, payment } = body as { buyer?: typeof s.buyer; fulfillment?: typeof s.fulfillment; payment?: typeof s.payment };
-  if (buyer) s.buyer = buyer;
-  if (fulfillment) s.fulfillment = fulfillment;
-  if (payment) s.payment = payment;
-
-  const ready = !!(s.buyer && s.fulfillment?.destinations?.length && s.payment?.instruments?.length);
+  const candidate: CheckoutSession = {
+    ...s,
+    ...(buyer !== undefined && { buyer }),
+    ...(fulfillment !== undefined && { fulfillment }),
+    ...(payment !== undefined && { payment }),
+  };
+  const ready = !!(
+    candidate.buyer &&
+    candidate.fulfillment?.destinations?.length &&
+    candidate.payment?.instruments?.length
+  );
   const nextStatus = ready ? 'ready_for_complete' : 'incomplete';
-  assertTransition(s.status, nextStatus);
-  s.status = nextStatus;
-  sessionStore.put(s);
-  res.json(s);
+  try {
+    assertTransition(candidate.status, nextStatus);
+  } catch (e) {
+    if (e instanceof IllegalTransitionError) {
+      return res.status(409).json({
+        messages: [{ type: 'error', code: 'UCP_INVALID_STATE', content: e.message, severity: 'high' }],
+      });
+    }
+    throw e;
+  }
+  const next: CheckoutSession = { ...candidate, status: nextStatus };
+  sessionStore.put(next);
+  res.json(next);
 });

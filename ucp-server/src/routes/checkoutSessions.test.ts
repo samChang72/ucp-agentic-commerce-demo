@@ -129,3 +129,43 @@ describe('PUT /checkout-sessions/:id', () => {
     expect(r.body.status).toBe('incomplete');
   });
 });
+
+describe('PUT /checkout-sessions/:id — negative paths', () => {
+  beforeEach(() => sessionStore.clear());
+
+  it('returns 404 for unknown id', async () => {
+    const app = buildApp();
+    const r = await request(app).put('/checkout-sessions/chk_nope')
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-404' })
+      .send({});
+    expect(r.status).toBe(404);
+    expect(r.body.messages[0].code).toBe('UCP_NOT_FOUND');
+  });
+
+  it('returns 409 when session is canceled', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-409c' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    // Force terminal state via store directly
+    const stored = sessionStore.get(created.body.id)!;
+    sessionStore.put({ ...stored, status: 'canceled' });
+    const r = await request(app).put(`/checkout-sessions/${created.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-409c-put' })
+      .send({ buyer: { email: 'x', first_name: 'a', last_name: 'b' } });
+    expect(r.status).toBe(409);
+    expect(r.body.messages[0].code).toBe('UCP_INVALID_STATE');
+  });
+
+  it('returns 400 when body is not a JSON object', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-400b' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    const r = await request(app).put(`/checkout-sessions/${created.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-400b-put' })
+      .send([1, 2, 3]);
+    expect(r.status).toBe(400);
+    expect(r.body.messages[0].code).toBe('UCP_BAD_REQUEST');
+  });
+});
