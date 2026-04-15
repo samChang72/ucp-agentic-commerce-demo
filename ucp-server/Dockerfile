@@ -5,6 +5,7 @@ WORKDIR /app
 COPY package*.json tsconfig.json ./
 RUN npm ci
 COPY src ./src
+COPY public ./public
 RUN npm run build
 
 FROM node:20-alpine
@@ -12,6 +13,7 @@ WORKDIR /app
 COPY --chown=node:node package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/public ./public
 ENV PORT=8080 NODE_ENV=production
 EXPOSE 8080
 USER node

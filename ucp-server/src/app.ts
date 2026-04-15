@@ -1,11 +1,16 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { corsMiddleware } from './middleware/cors.js';
 import { signatureProducer } from './middleware/signature.js';
 import { healthRouter } from './routes/health.js';
 import { checkoutSessionsRouter } from './routes/checkoutSessions.js';
 import { ordersRouter } from './routes/orders.js';
 import { catalogRouter } from './routes/catalog.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = resolve(__dirname, '../public');
 
 export function buildApp() {
   const app = express();
@@ -16,6 +21,9 @@ export function buildApp() {
     const rid = req.header('Request-Id') ?? randomUUID();
     res.setHeader('Request-Id', rid);
     next();
+  });
+  app.get('/sdk.js', (_req, res) => {
+    res.type('application/javascript').sendFile(resolve(PUBLIC_DIR, 'sdk.js'));
   });
   app.use(signatureProducer);
   app.use(healthRouter);
