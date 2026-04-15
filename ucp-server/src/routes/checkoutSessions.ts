@@ -5,6 +5,7 @@ import { idempotencyMiddleware } from '../middleware/idempotency.js';
 import { sessionStore } from '../store/sessions.js';
 import { PRODUCTS } from '../data/products.js';
 import type { CheckoutSession, LineItem, Total } from '../types/ucp.js';
+import { assertTransition } from '../lib/stateMachine.js';
 
 type HydrationCode = 'UCP_OUT_OF_STOCK' | 'UCP_UNKNOWN_PRODUCT';
 
@@ -107,3 +108,45 @@ checkoutSessionsRouter.post(
     }
   },
 );
+
+checkoutSessionsRouter.get('/checkout-sessions/:id', requireUcpHeaders, (req, res) => {
+  const s = sessionStore.get(String(req.params.id));
+  if (!s) {
+    return res.status(404).json({
+      messages: [{ type: 'error', code: 'UCP_NOT_FOUND', content: 'session not found', severity: 'high' }],
+    });
+  }
+  res.json(s);
+});
+
+checkoutSessionsRouter.put('/checkout-sessions/:id', requireUcpHeaders, idempotencyMiddleware, (req, res) => {
+  const s = sessionStore.get(String(req.params.id));
+  if (!s) {
+    return res.status(404).json({
+      messages: [{ type: 'error', code: 'UCP_NOT_FOUND', content: 'session not found', severity: 'high' }],
+    });
+  }
+  if (s.status === 'completed' || s.status === 'canceled') {
+    return res.status(409).json({
+      messages: [{ type: 'error', code: 'UCP_INVALID_STATE', content: `cannot update session in ${s.status}`, severity: 'high' }],
+    });
+  }
+
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({
+      messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'request body must be a JSON object', severity: 'high' }],
+    });
+  }
+  const { buyer, fulfillment, payment } = body as { buyer?: typeof s.buyer; fulfillment?: typeof s.fulfillment; payment?: typeof s.payment };
+  if (buyer) s.buyer = buyer;
+  if (fulfillment) s.fulfillment = fulfillment;
+  if (payment) s.payment = payment;
+
+  const ready = !!(s.buyer && s.fulfillment?.destinations?.length && s.payment?.instruments?.length);
+  const nextStatus = ready ? 'ready_for_complete' : 'incomplete';
+  assertTransition(s.status, nextStatus);
+  s.status = nextStatus;
+  sessionStore.put(s);
+  res.json(s);
+});

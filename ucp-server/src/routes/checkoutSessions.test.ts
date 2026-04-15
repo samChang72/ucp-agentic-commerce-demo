@@ -78,3 +78,54 @@ describe('POST /checkout-sessions — negative paths', () => {
     expect(r.body.messages[0].code).toBe('UCP_BAD_REQUEST');
   });
 });
+
+describe('GET /checkout-sessions/:id', () => {
+  beforeEach(() => sessionStore.clear());
+
+  it('returns existing session', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'g-c' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    const r = await request(app).get(`/checkout-sessions/${created.body.id}`).set(authHeaders);
+    expect(r.status).toBe(200);
+    expect(r.body.id).toBe(created.body.id);
+  });
+
+  it('returns 404 for unknown id', async () => {
+    const app = buildApp();
+    const r = await request(app).get('/checkout-sessions/chk_nope').set(authHeaders);
+    expect(r.status).toBe(404);
+  });
+});
+
+describe('PUT /checkout-sessions/:id', () => {
+  beforeEach(() => sessionStore.clear());
+
+  it('updates buyer + fulfillment + payment -> transitions to ready_for_complete', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-c1' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    const r = await request(app).put(`/checkout-sessions/${created.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-put1' })
+      .send({
+        buyer: { email: 'a@b.c', first_name: 'A', last_name: 'B' },
+        fulfillment: { destinations: [{ recipient: 'A B', line1: 'Taipei', city: 'TP', postal_code: '100', country: 'TW' }], method_type: 'shipping' },
+        payment: { instruments: [{ handler_id: 'google-pay-mock', type: 'wallet' }] },
+      });
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('ready_for_complete');
+  });
+
+  it('stays incomplete when buyer missing', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-c2' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    const r = await request(app).put(`/checkout-sessions/${created.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'p-put2' })
+      .send({ fulfillment: { destinations: [{ recipient: 'A', line1: 'x', city: 'TP', postal_code: '100', country: 'TW' }], method_type: 'shipping' } });
+    expect(r.body.status).toBe('incomplete');
+  });
+});
