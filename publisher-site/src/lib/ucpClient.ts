@@ -89,11 +89,22 @@ export async function completeSession(
 }
 
 export interface CatalogProduct {
-  id: string;
-  title: string;
-  price: number;
-  currency: string;
+  '@context'?: string;
+  '@type'?: string;
+  '@id': string;
+  name: string;
   image?: string;
+  offers: {
+    '@type'?: string;
+    priceCurrency: string;
+    price: number;
+    availability: string;
+  };
+  aggregateRating?: {
+    '@type'?: string;
+    ratingValue: number;
+    reviewCount: number;
+  };
   [k: string]: unknown;
 }
 
