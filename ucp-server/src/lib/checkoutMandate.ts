@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import { signJwt, verifyJwt } from './jwt.js';
 
+/**
+ * Hash a checkout state (or any object). Uses `JSON.stringify` which preserves
+ * insertion-order, so callers must build the state object with stable field order
+ * on both sides. Task 14 documents the canonical state shape; do not reorder.
+ */
 export function hashCheckoutState(state: unknown): string {
   return createHash('sha256').update(JSON.stringify(state)).digest('hex');
 }

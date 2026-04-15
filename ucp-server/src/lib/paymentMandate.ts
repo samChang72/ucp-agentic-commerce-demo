@@ -21,7 +21,10 @@ export async function verifyPaymentMandate(token: string, expectedCheckoutId: st
   const { payload } = await verifyJwt(jwt, 'merchant');
   if (payload.checkout_id !== expectedCheckoutId) throw new Error('checkout_id mismatch');
   if (payload.amount !== expectedAmount) throw new Error('amount mismatch');
-  const jti = payload.jti as string;
+  const { jti } = payload;
+  if (typeof jti !== 'string' || !jti) {
+    throw new Error('payment mandate missing jti (replay guard unavailable)');
+  }
   if (mandateStore.isUsed(jti)) throw new Error('payment mandate replay detected');
   mandateStore.markUsed(jti);
   return { ok: true, payload };

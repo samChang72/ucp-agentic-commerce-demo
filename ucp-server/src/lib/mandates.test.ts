@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { signCheckoutMandate, verifyCheckoutMandate, hashCheckoutState } from './checkoutMandate.js';
 import { signPaymentMandate, verifyPaymentMandate } from './paymentMandate.js';
+import { signJwt } from './jwt.js';
 import { mandateStore } from '../store/mandates.js';
 
 describe('CheckoutMandate', () => {
@@ -30,5 +31,23 @@ describe('PaymentMandate', () => {
     const r = await verifyPaymentMandate(token, 'chk_1', 8390);
     expect(r.ok).toBe(true);
     await expect(verifyPaymentMandate(token, 'chk_1', 8390)).rejects.toThrow(/replay/i);
+  });
+});
+
+describe('PaymentMandate negatives', () => {
+  beforeEach(() => mandateStore.clear());
+
+  it('rejects malformed token (no tilde)', async () => {
+    await expect(verifyPaymentMandate('not-a-jwt-token', 'chk_x', 100)).rejects.toThrow(/invalid SD-JWT-VC shape/);
+  });
+
+  it('rejects token with wrong audience', async () => {
+    const wrongAudJwt = await signJwt({ checkout_id: 'chk_1', amount: 100, currency: 'TWD' }, { aud: 'other-party', exp: 60 });
+    await expect(verifyPaymentMandate(`${wrongAudJwt}~`, 'chk_1', 100)).rejects.toThrow();
+  });
+
+  it('rejects expired token', async () => {
+    const jwt = await signJwt({ checkout_id: 'chk_1', amount: 100, currency: 'TWD' }, { aud: 'merchant', exp: -1 });
+    await expect(verifyPaymentMandate(`${jwt}~`, 'chk_1', 100)).rejects.toThrow();
   });
 });
