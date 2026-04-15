@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { corsMiddleware } from './middleware/cors.js';
 import { signatureProducer } from './middleware/signature.js';
@@ -6,6 +6,7 @@ import { healthRouter } from './routes/health.js';
 
 export function buildApp() {
   const app = express();
+  app.disable('x-powered-by');
   app.use(corsMiddleware);
   app.use(express.json({ limit: '1mb' }));
   app.use((req, res, next) => {
@@ -13,9 +14,24 @@ export function buildApp() {
     res.setHeader('Request-Id', rid);
     next();
   });
-  // signatureProducer BEFORE routes so response headers are signed on every JSON reply
-  // (idempotency middleware will mount per-route in Task 12+)
   app.use(signatureProducer);
   app.use(healthRouter);
+
+  // JSON 404
+  app.use((_req, res) => {
+    res.status(404).json({
+      messages: [{ type: 'error', code: 'UCP_NOT_FOUND', content: 'route not found', severity: 'medium' }],
+    });
+  });
+
+  // Central error handler (4-arg signature required by Express)
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('[error]', err);
+    if (res.headersSent) return;
+    res.status(500).json({
+      messages: [{ type: 'error', code: 'UCP_INTERNAL', content: 'internal server error', severity: 'high' }],
+    });
+  });
+
   return app;
 }
