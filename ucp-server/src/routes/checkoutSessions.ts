@@ -271,3 +271,26 @@ checkoutSessionsRouter.post(
   },
 );
 
+checkoutSessionsRouter.post(
+  '/checkout-sessions/:id/cancel',
+  requireUcpHeaders,
+  idempotencyMiddleware,
+  (req, res) => {
+    const id = String(req.params.id);
+    const s = sessionStore.get(id);
+    if (!s) {
+      return res.status(404).json({
+        messages: [{ type: 'error', code: 'UCP_NOT_FOUND', content: 'session not found', severity: 'high' }],
+      });
+    }
+    if (s.status === 'completed' || s.status === 'canceled') {
+      return res.status(409).json({
+        messages: [{ type: 'error', code: 'UCP_INVALID_STATE', content: `cannot cancel ${s.status}`, severity: 'high' }],
+      });
+    }
+    const next: CheckoutSession = { ...s, status: 'canceled' };
+    sessionStore.put(next);
+    return res.json(next);
+  },
+);
+

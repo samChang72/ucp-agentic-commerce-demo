@@ -250,3 +250,44 @@ describe('POST /checkout-sessions/:id/complete', () => {
     expect(r.body.messages[0].content).toMatch(/expected_total/);
   });
 });
+
+describe('POST /checkout-sessions/:id/cancel', () => {
+  beforeEach(() => sessionStore.clear());
+
+  it('cancels incomplete session', async () => {
+    const app = buildApp();
+    const c = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-c1' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    const r = await request(app).post(`/checkout-sessions/${c.body.id}/cancel`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-cancel1' })
+      .send({});
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('canceled');
+  });
+
+  it('refuses to cancel completed (409)', async () => {
+    const app = buildApp();
+    const c = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-c2' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    // Force completed via store directly
+    const stored = sessionStore.get(c.body.id)!;
+    sessionStore.put({ ...stored, status: 'completed' });
+
+    const r = await request(app).post(`/checkout-sessions/${c.body.id}/cancel`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-cancel2' })
+      .send({});
+    expect(r.status).toBe(409);
+    expect(r.body.messages[0].code).toBe('UCP_INVALID_STATE');
+  });
+
+  it('returns 404 for unknown id', async () => {
+    const app = buildApp();
+    const r = await request(app).post('/checkout-sessions/chk_nope/cancel')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-404' })
+      .send({});
+    expect(r.status).toBe(404);
+    expect(r.body.messages[0].code).toBe('UCP_NOT_FOUND');
+  });
+});
