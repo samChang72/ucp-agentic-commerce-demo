@@ -5,6 +5,7 @@ import { signatureProducer } from './middleware/signature.js';
 import { healthRouter } from './routes/health.js';
 import { checkoutSessionsRouter } from './routes/checkoutSessions.js';
 import { ordersRouter } from './routes/orders.js';
+import { catalogRouter } from './routes/catalog.js';
 
 export function buildApp() {
   const app = express();
@@ -20,6 +21,7 @@ export function buildApp() {
   app.use(healthRouter);
   app.use(checkoutSessionsRouter);
   app.use(ordersRouter);
+  app.use(catalogRouter);
 
   // JSON 404
   app.use((_req, res) => {
