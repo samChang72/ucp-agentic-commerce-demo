@@ -201,15 +201,27 @@ checkoutSessionsRouter.post(
       expected_total?: number;
     };
 
+    const total = s.totals.find((t) => t.type === 'total')!.amount;
+    if (expected_total !== total) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'expected_total mismatch', severity: 'high' }],
+      });
+    }
+    if (!ap2?.checkout_mandate) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'missing ap2.checkout_mandate', severity: 'high' }],
+      });
+    }
+    const token = payment?.instruments?.[0]?.credential?.token;
+    if (!token) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'missing payment mandate token', severity: 'high' }],
+      });
+    }
+
     try {
-      const total = s.totals.find((t) => t.type === 'total')!.amount;
-      if (expected_total !== total) throw new Error('expected_total mismatch');
-      if (!ap2?.checkout_mandate) throw new Error('missing ap2.checkout_mandate');
       const stateHash = hashCheckoutState({ id: s.id, total });
       await verifyCheckoutMandate(ap2.checkout_mandate, s.id, stateHash);
-
-      const token = payment?.instruments?.[0]?.credential?.token;
-      if (!token) throw new Error('missing payment mandate token');
       await verifyPaymentMandate(token, s.id, total);
 
       const orderId = `ord_${randomUUID().slice(0, 8)}`;
@@ -258,3 +270,4 @@ checkoutSessionsRouter.post(
     }
   },
 );
+

@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { buildApp } from '../app.js';
 import { sessionStore } from '../store/sessions.js';
+import { orderStore } from '../store/orders.js';
+import { mandateStore } from '../store/mandates.js';
+import { hashCheckoutState, signCheckoutMandate } from '../lib/checkoutMandate.js';
+import { signPaymentMandate } from '../lib/paymentMandate.js';
 
 const authHeaders = {
   'UCP-Agent': 'profile="http://localhost:3002/profile"',
@@ -171,7 +175,11 @@ describe('PUT /checkout-sessions/:id — negative paths', () => {
 });
 
 describe('POST /checkout-sessions/:id/complete', () => {
-  beforeEach(() => sessionStore.clear());
+  beforeEach(() => {
+    sessionStore.clear();
+    orderStore.clear();
+    mandateStore.clear();
+  });
 
   it('validates mandates and transitions to completed, creates order', async () => {
     const app = buildApp();
@@ -188,8 +196,6 @@ describe('POST /checkout-sessions/:id/complete', () => {
       });
 
     const total = created.body.totals.find((t: any) => t.type === 'total').amount;
-    const { hashCheckoutState, signCheckoutMandate } = await import('../lib/checkoutMandate.js');
-    const { signPaymentMandate } = await import('../lib/paymentMandate.js');
     const stateHash = hashCheckoutState({ id: created.body.id, total });
     const checkoutMandate = await signCheckoutMandate(stateHash, created.body.id);
     const paymentMandate = await signPaymentMandate({ checkout_id: created.body.id, amount: total, currency: 'TWD' });
@@ -218,5 +224,29 @@ describe('POST /checkout-sessions/:id/complete', () => {
       .send({ ap2: { checkout_mandate: 'x' }, payment: { instruments: [] }, expected_total: 0 });
     expect(r.status).toBe(409);
     expect(r.body.messages[0].code).toBe('UCP_INVALID_STATE');
+  });
+
+  it('returns UCP_BAD_REQUEST when expected_total mismatches', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-c3' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    await request(app).put(`/checkout-sessions/${created.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-p3' })
+      .send({
+        buyer: { email: 'a@b.c', first_name: 'A', last_name: 'B' },
+        fulfillment: { destinations: [{ recipient: 'A', line1: 'x', city: 'TP', postal_code: '100', country: 'TW' }], method_type: 'shipping' },
+        payment: { instruments: [{ handler_id: 'google-pay-mock', type: 'wallet' }] },
+      });
+    const r = await request(app).post(`/checkout-sessions/${created.body.id}/complete`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-cmpl3' })
+      .send({
+        ap2: { checkout_mandate: 'placeholder' },
+        payment: { instruments: [{ handler_id: 'google-pay-mock', type: 'wallet', credential: { token: 'x~' } }] },
+        expected_total: 999999,
+      });
+    expect(r.status).toBe(400);
+    expect(r.body.messages[0].code).toBe('UCP_BAD_REQUEST');
+    expect(r.body.messages[0].content).toMatch(/expected_total/);
   });
 });
