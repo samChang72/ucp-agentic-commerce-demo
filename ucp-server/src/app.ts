@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { corsMiddleware } from './middleware/cors.js';
 import { signatureProducer } from './middleware/signature.js';
 import { healthRouter } from './routes/health.js';
+import { checkoutSessionsRouter } from './routes/checkoutSessions.js';
 
 export function buildApp() {
   const app = express();
@@ -16,6 +17,7 @@ export function buildApp() {
   });
   app.use(signatureProducer);
   app.use(healthRouter);
+  app.use(checkoutSessionsRouter);
 
   // JSON 404
   app.use((_req, res) => {
