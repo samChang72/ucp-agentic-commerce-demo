@@ -4,8 +4,13 @@ import { requireUcpHeaders } from '../middleware/ucpHeaders.js';
 import { idempotencyMiddleware } from '../middleware/idempotency.js';
 import { sessionStore } from '../store/sessions.js';
 import { PRODUCTS } from '../data/products.js';
-import type { CheckoutSession, LineItem, Total } from '../types/ucp.js';
+import type { CheckoutSession, LineItem, Total, Order, OrderLineItem } from '../types/ucp.js';
 import { assertTransition, IllegalTransitionError } from '../lib/stateMachine.js';
+import { hashCheckoutState, verifyCheckoutMandate } from '../lib/checkoutMandate.js';
+import { verifyPaymentMandate } from '../lib/paymentMandate.js';
+import { orderStore } from '../store/orders.js';
+
+const MERCHANT_BASE = process.env.MERCHANT_URL ?? 'http://localhost:3000';
 
 type HydrationCode = 'UCP_OUT_OF_STOCK' | 'UCP_UNKNOWN_PRODUCT';
 
@@ -165,3 +170,91 @@ checkoutSessionsRouter.put('/checkout-sessions/:id', requireUcpHeaders, idempote
   sessionStore.put(next);
   res.json(next);
 });
+
+checkoutSessionsRouter.post(
+  '/checkout-sessions/:id/complete',
+  requireUcpHeaders,
+  idempotencyMiddleware,
+  async (req, res) => {
+    const id = String(req.params.id);
+    const s = sessionStore.get(id);
+    if (!s) {
+      return res.status(404).json({
+        messages: [{ type: 'error', code: 'UCP_NOT_FOUND', content: 'session not found', severity: 'high' }],
+      });
+    }
+    if (s.status !== 'ready_for_complete') {
+      return res.status(409).json({
+        messages: [{ type: 'error', code: 'UCP_INVALID_STATE', content: `expected ready_for_complete, got ${s.status}`, severity: 'high' }],
+      });
+    }
+
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_BAD_REQUEST', content: 'request body must be a JSON object', severity: 'high' }],
+      });
+    }
+    const { ap2, payment, expected_total } = body as {
+      ap2?: { checkout_mandate?: string };
+      payment?: { instruments?: Array<{ credential?: { token?: string } }> };
+      expected_total?: number;
+    };
+
+    try {
+      const total = s.totals.find((t) => t.type === 'total')!.amount;
+      if (expected_total !== total) throw new Error('expected_total mismatch');
+      if (!ap2?.checkout_mandate) throw new Error('missing ap2.checkout_mandate');
+      const stateHash = hashCheckoutState({ id: s.id, total });
+      await verifyCheckoutMandate(ap2.checkout_mandate, s.id, stateHash);
+
+      const token = payment?.instruments?.[0]?.credential?.token;
+      if (!token) throw new Error('missing payment mandate token');
+      await verifyPaymentMandate(token, s.id, total);
+
+      const orderId = `ord_${randomUUID().slice(0, 8)}`;
+      const order: Order = {
+        ucp: { version: '1.0' },
+        id: orderId,
+        checkout_id: s.id,
+        permalink_url: `${MERCHANT_BASE}/ecommerce-frontend/#/order/${orderId}`,
+        line_items: s.line_items.map<OrderLineItem>((li) => ({
+          id: li.id,
+          item: li.item,
+          quantity: li.quantity,
+          totals: li.totals,
+          status: 'processing',
+        })),
+        fulfillment: {
+          expectations: [{
+            id: 'exp_1',
+            line_items: s.line_items.map((li) => li.id),
+            method_type: s.fulfillment?.method_type ?? 'shipping',
+            destination: s.fulfillment?.destinations?.[0],
+            description: 'Standard shipping',
+          }],
+          events: [],
+        },
+        adjustments: [],
+        currency: s.currency,
+        totals: s.totals,
+        messages: [{ type: 'info', code: 'ORDER_CREATED', content: 'Order has been placed', severity: 'low' }],
+      };
+      orderStore.put(order);
+
+      const completed: CheckoutSession = {
+        ...s,
+        status: 'completed',
+        ap2: { checkout_mandate: ap2.checkout_mandate },
+        order: { id: orderId, permalink_url: order.permalink_url },
+      };
+      sessionStore.put(completed);
+      return res.json(completed);
+    } catch (e) {
+      const err = e as Error;
+      return res.status(400).json({
+        messages: [{ type: 'error', code: 'UCP_MANDATE_INVALID', content: err.message, severity: 'high' }],
+      });
+    }
+  },
+);

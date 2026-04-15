@@ -4,6 +4,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { signatureProducer } from './middleware/signature.js';
 import { healthRouter } from './routes/health.js';
 import { checkoutSessionsRouter } from './routes/checkoutSessions.js';
+import { ordersRouter } from './routes/orders.js';
 
 export function buildApp() {
   const app = express();
@@ -18,6 +19,7 @@ export function buildApp() {
   app.use(signatureProducer);
   app.use(healthRouter);
   app.use(checkoutSessionsRouter);
+  app.use(ordersRouter);
 
   // JSON 404
   app.use((_req, res) => {

@@ -169,3 +169,54 @@ describe('PUT /checkout-sessions/:id — negative paths', () => {
     expect(r.body.messages[0].code).toBe('UCP_BAD_REQUEST');
   });
 });
+
+describe('POST /checkout-sessions/:id/complete', () => {
+  beforeEach(() => sessionStore.clear());
+
+  it('validates mandates and transitions to completed, creates order', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-c' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+
+    await request(app).put(`/checkout-sessions/${created.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-p' })
+      .send({
+        buyer: { email: 'a@b.c', first_name: 'A', last_name: 'B' },
+        fulfillment: { destinations: [{ recipient: 'A B', line1: 'Taipei', city: 'TP', postal_code: '100', country: 'TW' }], method_type: 'shipping' },
+        payment: { instruments: [{ handler_id: 'google-pay-mock', type: 'wallet' }] },
+      });
+
+    const total = created.body.totals.find((t: any) => t.type === 'total').amount;
+    const { hashCheckoutState, signCheckoutMandate } = await import('../lib/checkoutMandate.js');
+    const { signPaymentMandate } = await import('../lib/paymentMandate.js');
+    const stateHash = hashCheckoutState({ id: created.body.id, total });
+    const checkoutMandate = await signCheckoutMandate(stateHash, created.body.id);
+    const paymentMandate = await signPaymentMandate({ checkout_id: created.body.id, amount: total, currency: 'TWD' });
+
+    const r = await request(app).post(`/checkout-sessions/${created.body.id}/complete`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-cmpl' })
+      .send({
+        ap2: { checkout_mandate: checkoutMandate },
+        payment: { instruments: [{ handler_id: 'google-pay-mock', type: 'wallet', credential: { token: paymentMandate } }] },
+        expected_total: total,
+        signals: { 'dev.ucp.buyer_ip': '127.0.0.1', 'dev.ucp.user_agent': 'test' },
+      });
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('completed');
+    expect(r.body.order.id).toMatch(/^ord_/);
+    expect(r.body.order.permalink_url).toContain(r.body.order.id);
+  });
+
+  it('rejects when state not ready_for_complete (409)', async () => {
+    const app = buildApp();
+    const created = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-c2' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    const r = await request(app).post(`/checkout-sessions/${created.body.id}/complete`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cm-cmpl2' })
+      .send({ ap2: { checkout_mandate: 'x' }, payment: { instruments: [] }, expected_total: 0 });
+    expect(r.status).toBe(409);
+    expect(r.body.messages[0].code).toBe('UCP_INVALID_STATE');
+  });
+});
