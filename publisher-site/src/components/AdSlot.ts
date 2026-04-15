@@ -1,4 +1,5 @@
 import { getCatalog, createSession, type CatalogProduct, type CheckoutSession } from '../lib/ucpClient.js';
+import { renderCheckoutForm, type CompletedResult } from './CheckoutForm.js';
 
 const CARD_CSS = `
   :host { all: initial; display: block; }
@@ -91,14 +92,21 @@ export class UcpAdSlot extends HTMLElement {
       buy.textContent = '建立 session…';
       try {
         const session: CheckoutSession = await createSession(productId);
-        this.dispatchEvent(
-          new CustomEvent('ucp-checkout-open', {
-            detail: { session, productId, container: checkout },
-            bubbles: true,
-            composed: true,
-          })
-        );
-        // CheckoutForm (Task 27) renders inside `checkout` via this event.
+        buy.style.display = 'none';
+        renderCheckoutForm(checkout, session, (result: CompletedResult) => {
+          const order = result.order;
+          if (!order) {
+            checkout.innerHTML = `<div class="error">訂單資料缺失</div>`;
+            return;
+          }
+          checkout.innerHTML = `
+            <div style="padding:12px; background:#d1fae5; border-radius:8px;">
+              ✅ 訂單完成：<strong>${order.id}</strong>
+              <br /><a href="${order.permalink_url}" target="_blank" rel="noopener">查看訂單 →</a>
+            </div>
+          `;
+          window.postMessage({ type: 'ucp-order-completed', order }, '*');
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         checkout.innerHTML = `<div class="error">建立結帳失敗：${msg}</div>`;
