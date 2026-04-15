@@ -28,3 +28,30 @@ describe('checkout state machine', () => {
     expect(() => assertTransition('completed', 'canceled')).toThrow(/illegal/i);
   });
 });
+
+import { IllegalTransitionError } from './stateMachine.js';
+
+describe('checkout state machine extras', () => {
+  it('allows self-transitions for non-terminal states', () => {
+    expect(canTransition('incomplete', 'incomplete')).toBe(true);
+    expect(canTransition('ready_for_complete', 'ready_for_complete')).toBe(true);
+  });
+
+  it('rejects canceled → anything', () => {
+    expect(canTransition('canceled', 'incomplete')).toBe(false);
+    expect(canTransition('canceled', 'completed')).toBe(false);
+    expect(canTransition('canceled', 'ready_for_complete')).toBe(false);
+  });
+
+  it('assertTransition throws IllegalTransitionError with from/to fields', () => {
+    try {
+      assertTransition('completed', 'canceled');
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(IllegalTransitionError);
+      expect((e as IllegalTransitionError).from).toBe('completed');
+      expect((e as IllegalTransitionError).to).toBe('canceled');
+      expect((e as Error).message).toMatch(/illegal transition/i);
+    }
+  });
+});
