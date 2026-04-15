@@ -1,18 +1,18 @@
 # UCP Demo 執行進度 Checkpoint
 
-> 最後更新：2026-04-15（M2 結束，準備進入 M3 publisher-site）
+> 最後更新：2026-04-15（M3 結束，準備進入 M4 ecommerce-frontend）
 > Jira：[FRON-5348](https://guoshi.atlassian.net/browse/FRON-5348)
 
 ## 當前位置
 
 - **Umbrella repo**：`/Users/sam/project/ucp-agentic-commerce-demo/`
 - **Branch**：`feat/ucp-demo-implementation`
-- **HEAD SHA**：`dfe6ddb` — `docs: relocate UCP plan, design, and progress checkpoint into repo`
-- **狀態**：working tree clean
+- **HEAD SHA**：(Task 29 完成時的 checkpoint 本身為 HEAD)
+- **狀態**：working tree clean（唯 `.claude/` 未追蹤）
 
 ## 進度總覽
 
-**完成 20/42 tasks（48%），~36 commits，68 tests / 11 test files passing，tsc 0 errors**
+**完成 29/42 tasks（69%），~45 commits，71 tests / 11 test files passing（ucp-server），tsc 0 errors（三端）**
 
 ### M1 ucp-server 骨架 ✅（Task 1–10）
 - Task 1: init ucp-server — `ab338ae` + `b24c1b8` (tsconfig + engines 修正)
@@ -42,10 +42,25 @@
 
 **M2 完成 🎉**：UCP 端點（create/get/update/complete/cancel）+ catalog + mandate lib + Dockerfile + smoke + SDK skeleton 皆已就緒，working tree clean。
 
+### M3 publisher-site ✅（Task 21–29）
+
+publisher-site 落地於 umbrella repo `publisher-site/`（非獨立 repo），複用 umbrella `.gitignore`。
+
+- Task 21: init Vite + TS scaffold — `1f05ba5`
+- Task 22: 文章頁 HTML + CSS — `45fbed6` (zh-Hant TechReview Taiwan + data-ucp-ad slot)
+- Task 23: ucpClient.ts — `3b0c496` (typed create/update/complete/catalog + UCP headers)
+- Task 24: clientMandate stub + ADR — `e6322d5` (skip jose client-sign dead end)
+- Task 25: `/internal/demo-sign-mandate/:id` + SDK integration — `d21f6c5` (+3 tests, 68→71 passing)
+- Task 26: Shadow DOM AdSlot (Rich Product Card) — `3503f51` (`:host all:initial`, Schema.org consume)
+- Task 27: CheckoutForm inline flow — `3d9a217` (update → sign → complete + gpay mock gate)
+- Task 28: Dockerfile + nginx.conf + .dockerignore — (多階段 build → nginx:1.27-alpine, :8080, /healthz)
+  - ⚠️ Docker daemon 離線，build/smoke 未執行（同 Task 17）
+- Task 29: M3 驗收 — HTTP 整合 smoke 通過（create→update→sign→complete→order 生成 ord_xxx，total 8390）
+  - UI 互動留待 Task 36 Playwright E2E
+
 ### 待續
 
-- **下一步**：Task 21 — 初始化 publisher-site（Vite + TS，新 repo `/Users/sam/project/publisher-site`）
-- M3 publisher-site（Task 21–29）
+- **下一步**：Task 30 — ecommerce-frontend OrderLookupPage（既有 Vue 3 repo，非 umbrella 內）
 - M4 ecommerce-frontend（Task 30–33）
 - M5 聯調 + E2E（Task 34–38）
 - M6 文件 + 部署（Task 39–42）
@@ -62,10 +77,10 @@
 
 ## Restart 後恢復流程
 
-1. 進入 repo：`cd /Users/sam/project/ucp-agentic-commerce-demo && git status`（應在 `feat/ucp-demo-implementation`, clean, HEAD=`177d101`）
-2. 驗證 ucp-server tests：`cd ucp-server && npm test` → 68 / 11 passing
-3. 重啟 subagent-driven skill：`/skill superpowers:subagent-driven-development`
-4. 從 **Task 21** 接起（publisher-site 新 repo 初始化 Vite + TS）
+1. 進入 repo：`cd /Users/sam/project/ucp-agentic-commerce-demo && git status`（應在 `feat/ucp-demo-implementation`, clean）
+2. 驗證 ucp-server tests：`cd ucp-server && npm test` → 71 / 11 passing
+3. 驗證 publisher-site build：`cd publisher-site && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
+4. 從 **Task 30** 接起（ecommerce-frontend OrderLookupPage；注意 ecommerce-frontend 仍在自己 repo `/Users/sam/project/ecommerce-frontend/`，不在 umbrella 內）
 
 ## 執行模式
 
