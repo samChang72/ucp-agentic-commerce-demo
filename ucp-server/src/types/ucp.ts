@@ -1,3 +1,10 @@
+/**
+ * UCP wire-contract types.
+ * Spec: https://ucp.dev/latest/specification/checkout-rest/
+ *      https://ucp.dev/latest/specification/order/
+ * Snapshot: 2026-04-15. snake_case field names are intentional (UCP convention).
+ * Fields prefixed with `_` are internal server state, not part of the UCP contract.
+ */
 // src/types/ucp.ts
 export type CheckoutStatus = 'incomplete' | 'ready_for_complete' | 'completed' | 'canceled';
 
@@ -13,9 +20,16 @@ export interface Total {
   currency: string;
 }
 
+export interface Item {
+  id: string;
+  title: string;
+  price: number;
+  image_url?: string;
+}
+
 export interface LineItem {
   id: string;
-  item: { id: string; title: string; price: number; image_url?: string };
+  item: Item;
   quantity: Quantity;
   totals: Total[];
 }
@@ -38,7 +52,10 @@ export interface PaymentInstrument {
   handler_id: string;
   type: 'card' | 'wallet';
   display?: { brand?: string; last4?: string };
-  credential?: { token: string };
+  credential?: {
+    /** Opaque handler token (e.g., PaymentMandate SD-JWT-VC). Never log. */
+    token: string;
+  };
   billing_address?: PostalAddress;
 }
 
@@ -72,7 +89,7 @@ export interface CheckoutSession {
 
 export interface OrderLineItem {
   id: string;
-  item: LineItem['item'];
+  item: Item;
   quantity: Quantity;
   totals: Total[];
   status: 'processing' | 'partial' | 'fulfilled' | 'removed';
@@ -90,9 +107,21 @@ export interface FulfillmentEvent {
   description?: string;
 }
 
+/** UCP Order adjustments (refunds, returns, credits). Stub — expand per UCP spec when needed. */
+export interface Adjustment {
+  id: string;
+  type: string;              // open string per spec: refund, return, credit, etc.
+  occurred_at: string;       // RFC 3339
+  status: 'pending' | 'completed' | 'failed';
+  line_items?: Array<{ id: string; quantity: number }>;
+  totals?: Total[];
+  description?: string;
+}
+
 export interface Order {
   ucp: { version: '1.0' };
   id: string;
+  /** Human-readable identifier (business-provided per UCP spec, optional). */
   label?: string;
   checkout_id: string;
   permalink_url: string;
@@ -108,7 +137,7 @@ export interface Order {
     }>;
     events: FulfillmentEvent[];
   };
-  adjustments: unknown[];
+  adjustments: Adjustment[];
   currency: string;
   totals: Total[];
   messages: Message[];
