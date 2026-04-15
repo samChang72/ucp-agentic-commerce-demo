@@ -7,12 +7,12 @@
 
 - **Umbrella repo**：`/Users/sam/project/ucp-agentic-commerce-demo/`
 - **Branch**：`feat/ucp-demo-implementation`
-- **HEAD SHA**：`177d101` — `fix(sdk): address code review follow-ups on SDK skeleton`
+- **HEAD SHA**：`dfe6ddb` — `docs: relocate UCP plan, design, and progress checkpoint into repo`
 - **狀態**：working tree clean
 
 ## 進度總覽
 
-**完成 20/42 tasks（48%），~35 commits，68 tests / 11 test files passing，tsc 0 errors**
+**完成 20/42 tasks（48%），~36 commits，68 tests / 11 test files passing，tsc 0 errors**
 
 ### M1 ucp-server 骨架 ✅（Task 1–10）
 - Task 1: init ucp-server — `ab338ae` + `b24c1b8` (tsconfig + engines 修正)
