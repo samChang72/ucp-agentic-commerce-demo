@@ -1,5 +1,6 @@
 import type { CheckoutSession } from '../types/ucp.js';
 
+/** In-memory CheckoutSession store. Keys by `session.id`. Cleared on process restart. */
 class SessionStore {
   private m = new Map<string, CheckoutSession>();
   put(s: CheckoutSession) { this.m.set(s.id, s); }
