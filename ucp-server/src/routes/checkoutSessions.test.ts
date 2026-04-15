@@ -326,3 +326,63 @@ describe('POST /checkout-sessions/:id/cancel', () => {
     expect(r.body.messages[0].content).toMatch(/canceled/);
   });
 });
+
+describe('POST /internal/demo-sign-mandate/:id', () => {
+  beforeEach(() => {
+    sessionStore.clear();
+    mandateStore.clear();
+  });
+
+  async function createSession(app: ReturnType<typeof buildApp>) {
+    const r = await request(app)
+      .post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': `dm-${Math.random()}` })
+      .send({
+        currency: 'TWD',
+        line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }],
+      });
+    return r.body;
+  }
+
+  it('returns checkout_mandate + payment_mandate + total that verify against the UCP server', async () => {
+    const app = buildApp();
+    const session = await createSession(app);
+
+    const r = await request(app)
+      .post(`/internal/demo-sign-mandate/${session.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'dm-ok' })
+      .send({});
+
+    expect(r.status).toBe(200);
+    expect(r.body.checkout_mandate).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+$/);
+    expect(r.body.payment_mandate).toMatch(/~$/);
+    expect(r.body.total).toBe(session.totals.find((t: { type: string; amount: number }) => t.type === 'total').amount);
+  });
+
+  it('returns 404 for unknown session', async () => {
+    const app = buildApp();
+    const r = await request(app)
+      .post('/internal/demo-sign-mandate/chk_missing')
+      .set({ ...authHeaders, 'Idempotency-Key': 'dm-404' })
+      .send({});
+    expect(r.status).toBe(404);
+    expect(r.body.messages[0].code).toBe('UCP_NOT_FOUND');
+  });
+
+  it('returns 403 when NODE_ENV=production', async () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const app = buildApp();
+      const session = await createSession(app);
+      const r = await request(app)
+        .post(`/internal/demo-sign-mandate/${session.id}`)
+        .set({ ...authHeaders, 'Idempotency-Key': 'dm-prod' })
+        .send({});
+      expect(r.status).toBe(403);
+      expect(r.body.messages[0].code).toBe('UCP_DEMO_ONLY');
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+});

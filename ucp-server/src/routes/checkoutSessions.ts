@@ -6,8 +6,8 @@ import { sessionStore } from '../store/sessions.js';
 import { PRODUCTS } from '../data/products.js';
 import type { CheckoutSession, LineItem, Total, Order, OrderLineItem } from '../types/ucp.js';
 import { assertTransition, IllegalTransitionError } from '../lib/stateMachine.js';
-import { hashCheckoutState, verifyCheckoutMandate } from '../lib/checkoutMandate.js';
-import { verifyPaymentMandate } from '../lib/paymentMandate.js';
+import { hashCheckoutState, signCheckoutMandate, verifyCheckoutMandate } from '../lib/checkoutMandate.js';
+import { signPaymentMandate, verifyPaymentMandate } from '../lib/paymentMandate.js';
 import { orderStore } from '../store/orders.js';
 
 const MERCHANT_BASE = process.env.MERCHANT_URL ?? 'http://localhost:3000';
@@ -268,6 +268,41 @@ checkoutSessionsRouter.post(
         messages: [{ type: 'error', code: 'UCP_MANDATE_INVALID', content: err.message, severity: 'high' }],
       });
     }
+  },
+);
+
+/**
+ * Demo-only endpoint: sign both checkout and payment mandates server-side so
+ * the browser SDK does not need to own a signing key that ucp-server trusts.
+ * Guarded by NODE_ENV !== 'production'. See ADR in
+ * publisher-site/src/lib/clientMandate.ts (Task 24/25).
+ */
+checkoutSessionsRouter.post(
+  '/internal/demo-sign-mandate/:id',
+  requireUcpHeaders,
+  async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({
+        messages: [{ type: 'error', code: 'UCP_DEMO_ONLY', content: 'endpoint disabled in production', severity: 'high' }],
+      });
+    }
+    const s = sessionStore.get(String(req.params.id));
+    if (!s) {
+      return res.status(404).json({
+        messages: [{ type: 'error', code: 'UCP_NOT_FOUND', content: 'session not found', severity: 'high' }],
+      });
+    }
+    const totalLine = s.totals.find((t) => t.type === 'total');
+    if (!totalLine) {
+      return res.status(409).json({
+        messages: [{ type: 'error', code: 'UCP_INVALID_STATE', content: 'session has no total', severity: 'high' }],
+      });
+    }
+    const total = totalLine.amount;
+    const stateHash = hashCheckoutState({ id: s.id, total });
+    const checkoutMandate = await signCheckoutMandate(stateHash, s.id);
+    const paymentMandate = await signPaymentMandate({ checkout_id: s.id, amount: total, currency: s.currency });
+    return res.json({ checkout_mandate: checkoutMandate, payment_mandate: paymentMandate, total });
   },
 );
 
