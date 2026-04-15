@@ -23,7 +23,9 @@ export function buildApp() {
     next();
   });
   app.get('/sdk.js', (_req, res) => {
-    res.type('application/javascript').sendFile(resolve(PUBLIC_DIR, 'sdk.js'));
+    res.type('application/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-cache');
+    res.sendFile(resolve(PUBLIC_DIR, 'sdk.js'));
   });
   app.use(signatureProducer);
   app.use(healthRouter);

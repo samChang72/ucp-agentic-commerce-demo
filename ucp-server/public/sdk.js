@@ -13,8 +13,11 @@
   }
 
   function agentHeaders() {
+    var origin = (typeof location !== 'undefined' && location.origin && location.origin !== 'null')
+      ? location.origin
+      : UCP_API;
     return {
-      'UCP-Agent': 'profile="' + location.origin + '/profile"',
+      'UCP-Agent': 'profile="' + origin + '/profile"',
       'Request-Id': uuid()
     };
   }
