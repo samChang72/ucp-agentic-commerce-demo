@@ -290,4 +290,39 @@ describe('POST /checkout-sessions/:id/cancel', () => {
     expect(r.status).toBe(404);
     expect(r.body.messages[0].code).toBe('UCP_NOT_FOUND');
   });
+
+  it('cancels ready_for_complete session', async () => {
+    const app = buildApp();
+    const c = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-rfc-c' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    await request(app).put(`/checkout-sessions/${c.body.id}`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-rfc-p' })
+      .send({
+        buyer: { email: 'a@b.c', first_name: 'A', last_name: 'B' },
+        fulfillment: { destinations: [{ recipient: 'A', line1: 'x', city: 'TP', postal_code: '100', country: 'TW' }], method_type: 'shipping' },
+        payment: { instruments: [{ handler_id: 'google-pay-mock', type: 'wallet' }] },
+      });
+    const r = await request(app).post(`/checkout-sessions/${c.body.id}/cancel`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-rfc-x' })
+      .send({});
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('canceled');
+  });
+
+  it('refuses to cancel an already-canceled session (409)', async () => {
+    const app = buildApp();
+    const c = await request(app).post('/checkout-sessions')
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-dup-c' })
+      .send({ currency: 'TWD', line_items: [{ item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } }] });
+    await request(app).post(`/checkout-sessions/${c.body.id}/cancel`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-dup-1' })
+      .send({});
+    const r = await request(app).post(`/checkout-sessions/${c.body.id}/cancel`)
+      .set({ ...authHeaders, 'Idempotency-Key': 'cn-dup-2' })   // different key, fresh request
+      .send({});
+    expect(r.status).toBe(409);
+    expect(r.body.messages[0].code).toBe('UCP_INVALID_STATE');
+    expect(r.body.messages[0].content).toMatch(/canceled/);
+  });
 });
