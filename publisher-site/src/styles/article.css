@@ -1,0 +1,43 @@
+body {
+  font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+  color: #222;
+  background: #fff;
+}
+
+.site-header {
+  border-bottom: 2px solid #000;
+  padding-bottom: 12px;
+  margin-bottom: 24px;
+}
+
+.site-header h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 1px;
+}
+
+.article h1 {
+  font-size: 28px;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.article p {
+  line-height: 1.8;
+  color: #333;
+}
+
+.byline {
+  color: #888;
+  font-size: 14px;
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+
+[data-ucp-ad] {
+  margin: 32px 0;
+  min-height: 180px;
+}
