@@ -229,7 +229,7 @@ checkoutSessionsRouter.post(
         ucp: { version: '1.0' },
         id: orderId,
         checkout_id: s.id,
-        permalink_url: `${MERCHANT_BASE}/ecommerce-frontend/#/order/${orderId}`,
+        permalink_url: `${MERCHANT_BASE}/ecommerce-frontend/order/${orderId}`,
         line_items: s.line_items.map<OrderLineItem>((li) => ({
           id: li.id,
           item: li.item,
