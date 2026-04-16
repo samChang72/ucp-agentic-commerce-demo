@@ -7,8 +7,10 @@
     "node": ">=20"
   },
   "scripts": {
+    "predev": "../scripts/free-port.sh ${PORT:-3001} ucp-server",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "prestart": "../scripts/free-port.sh ${PORT:-3001} ucp-server",
     "start": "node dist/index.js",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"

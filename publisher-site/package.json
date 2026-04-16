@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "../scripts/free-port.sh 3002 publisher-site",
     "dev": "vite",
     "build": "tsc && vite build",
+    "prepreview": "../scripts/free-port.sh 3002 publisher-site",
     "preview": "vite preview",
+    "pree2e": "../scripts/free-port.sh 3001 ucp-server && ../scripts/free-port.sh 3002 publisher-site",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "e2e:report": "playwright show-report"
