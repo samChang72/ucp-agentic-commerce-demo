@@ -1,0 +1,43 @@
+# Three-service local boot for the UCP agentic-commerce demo.
+#
+# Compose lives inside the umbrella repo but references ecommerce-frontend
+# via a relative path (`../ecommerce-frontend`) because that project keeps
+# its own repo. Run from the umbrella root:
+#
+#   docker compose up --build -d
+#   curl -sI http://localhost:3000/ecommerce-frontend/   # merchant
+#   curl -sI http://localhost:3002/                      # publisher
+#   curl -s  http://localhost:3001/healthz               # UCP API
+#   docker compose down
+
+services:
+  ucp-server:
+    build: ./ucp-server
+    environment:
+      PORT: "8080"
+      NODE_ENV: "development"
+      UCP_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3002"
+      MERCHANT_URL: "http://localhost:3000"
+    ports:
+      - "3001:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  merchant:
+    build: ../ecommerce-frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      ucp-server:
+        condition: service_healthy
+
+  publisher:
+    build: ./publisher-site
+    ports:
+      - "3002:8080"
+    depends_on:
+      ucp-server:
+        condition: service_healthy
