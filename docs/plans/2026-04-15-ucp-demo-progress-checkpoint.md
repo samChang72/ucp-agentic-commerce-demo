@@ -1,6 +1,6 @@
 # UCP Demo 執行進度 Checkpoint
 
-> 最後更新：2026-04-16（M5 結束，準備進入 M6 文件 + 部署）
+> 最後更新：2026-04-16（M6 結束，42/42 tasks 完成，待整合交付）
 > Jira：[FRON-5348](https://guoshi.atlassian.net/browse/FRON-5348)
 
 ## 當前位置
@@ -12,7 +12,7 @@
 
 ## 進度總覽
 
-**完成 38/42 tasks（90%），umbrella ~52 commits + ecommerce-frontend 3 commits on `feat/ucp-order-lookup`**
+**完成 42/42 tasks（100%），umbrella ~56 commits + ecommerce-frontend 4 commits on `feat/ucp-order-lookup`**
 
 - ucp-server: 71 tests / 11 files passing（vitest, 1.81s）
 - publisher-site: 4 E2E passing（Playwright chromium, 6.3s），tsc 0 errors
@@ -87,10 +87,19 @@ ecommerce-frontend 仍在獨立 repo `/Users/sam/project/ecommerce-frontend/`，
 - Task 37: negative paths（missing UCP-Agent → 400、cancel→complete → 409）— `58da399` 之後的 commit
 - Task 38: M5 roll-up — 本 checkpoint 記錄；ucp-server vitest + publisher-site Playwright + ecommerce-frontend build 全綠
 
+### M6 文件 + 部署 ✅（Task 39–42）
+
+- Task 39: READMEs — umbrella `ucp-server/README.md` + `publisher-site/README.md`，ecommerce-frontend `readme.md` 加 UCP 整合段落
+- Task 40: `ucp-server/openapi.yaml` — OpenAPI 3.0.3，標註 4 處偏離官方 spec（SD-JWT-VC shape、RFC 9421 scope、Identity Linking、`/catalog`+`/internal/demo-sign-mandate` extension）
+- Task 41: `docs/plans/2026-04-15-cloud-run-deployment.md` — project=`ucp-ec-demo`，asia-east1，免費方案 flags（`--min-instances=0 --max-instances=3 --cpu=1 --memory=512Mi`），三服務部署順序 + CORS 回填
+- Task 42: `docs/plans/2026-04-15-ucp-agentic-commerce-demo-acceptance.md` — 完整驗收 matrix，列出所有 plan 偏離點
+
 ### 待續
 
-- **下一步**：Task 39 — 三個服務各一份 README（ucp-server / publisher-site / ecommerce-frontend）
-- M6 文件 + 部署（Task 39–42）
+Plan 42 task 全部完成。剩下整合決策：
+1. 使用者本機 Docker 可用後跑 `docker compose up --build` 做一次 local 三服務整合驗收
+2. FRON-5348 填實際工時、resolve
+3. 若要交付到遠端，執行 `superpowers:finishing-a-development-branch` 決定 PR / merge 策略
 
 ## 關鍵設計決定（已沉澱）
 
@@ -108,7 +117,7 @@ ecommerce-frontend 仍在獨立 repo `/Users/sam/project/ecommerce-frontend/`，
 2. 驗證 ucp-server tests：`cd ucp-server && npm test` → 71 / 11 passing
 3. 驗證 publisher-site E2E：`cd publisher-site && npm run e2e` → 4 passed
 4. 檢查 ecommerce-frontend：`cd /Users/sam/project/ecommerce-frontend && git status`（應在 `feat/ucp-order-lookup`），`npm run build:app` 應通過
-5. 從 **Task 39** 接起（三個服務各寫 README）
+5. 所有 plan task 完成；接下來走整合交付（PR / merge / Cloud Run 部署）
 
 ## 執行模式
 
