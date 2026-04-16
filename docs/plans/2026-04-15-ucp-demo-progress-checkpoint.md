@@ -1,6 +1,6 @@
 # UCP Demo 執行進度 Checkpoint
 
-> 最後更新：2026-04-15（M3 結束，準備進入 M4 ecommerce-frontend）
+> 最後更新：2026-04-16（M4 結束，準備進入 M5 聯調 + E2E）
 > Jira：[FRON-5348](https://guoshi.atlassian.net/browse/FRON-5348)
 
 ## 當前位置
@@ -12,7 +12,7 @@
 
 ## 進度總覽
 
-**完成 29/42 tasks（69%），~45 commits，71 tests / 11 test files passing（ucp-server），tsc 0 errors（三端）**
+**完成 33/42 tasks（79%），umbrella ~46 commits + ecommerce-frontend 3 commits on `feat/ucp-order-lookup`，71 tests / 11 test files passing（ucp-server），tsc 0 errors（三端）**
 
 ### M1 ucp-server 骨架 ✅（Task 1–10）
 - Task 1: init ucp-server — `ab338ae` + `b24c1b8` (tsconfig + engines 修正)
@@ -58,10 +58,25 @@ publisher-site 落地於 umbrella repo `publisher-site/`（非獨立 repo），�
 - Task 29: M3 驗收 — HTTP 整合 smoke 通過（create→update→sign→complete→order 生成 ord_xxx，total 8390）
   - UI 互動留待 Task 36 Playwright E2E
 
+### M4 ecommerce-frontend ✅（Task 30–33）
+
+ecommerce-frontend 仍在獨立 repo `/Users/sam/project/ecommerce-frontend/`，PR branch `feat/ucp-order-lookup`（自 `main` 切出）。
+
+- Task 30: OrderLookupPage — ecommerce-frontend@`504880f`（`src/utils/ucpClient.js` + `src/pages/OrderLookupPage.vue` + router `/order/:id`）
+  - 搭配 umbrella `143295a` fix(api)：`permalink_url` 拿掉 `#`（ecommerce-frontend 為 history mode）
+- Task 31: ProductPage Schema.org JSON-LD — ecommerce-frontend@`c64fdb7`
+  - 用 `<component :is="'script'">` + `v-html` 注入（繞過 Vue template compiler 對字面 `<script>` 的警告）
+  - 貨幣 `USD`（以 `src/assets/products.json` 實資料為準，plan 原寫 TWD 為誤）
+- Task 32: Dockerfile + nginx.conf + `build:app` — ecommerce-frontend@`1852bee`
+  - `build:app` 避開 `deploy:onepixel`（gh-pages 專用）
+  - 把 `docs/` 拷到 `/usr/share/nginx/html/ecommerce-frontend`，對齊 vite `base: /ecommerce-frontend/`
+  - Docker daemon 離線，build/smoke 未跑（同 Task 17/28）
+- Task 33: M4 roll-up — 本 checkpoint 記錄
+  - 跨 repo HTTP smoke（Task 30 內跑過）：create→update→sign→complete 產 `ord_dbe952f7`，permalink 正確指向 `/ecommerce-frontend/order/ord_*`，CORS allow `localhost:3000`，`/orders/:id` 回 items/totals
+
 ### 待續
 
-- **下一步**：Task 30 — ecommerce-frontend OrderLookupPage（既有 Vue 3 repo，非 umbrella 內）
-- M4 ecommerce-frontend（Task 30–33）
+- **下一步**：Task 34 — `/Users/sam/project/docker-compose.yml`（三服務 local boot；compose 置於 `/Users/sam/project/` 而非 umbrella 內，以便同時參照 umbrella + ecommerce-frontend）
 - M5 聯調 + E2E（Task 34–38）
 - M6 文件 + 部署（Task 39–42）
 
@@ -77,10 +92,11 @@ publisher-site 落地於 umbrella repo `publisher-site/`（非獨立 repo），�
 
 ## Restart 後恢復流程
 
-1. 進入 repo：`cd /Users/sam/project/ucp-agentic-commerce-demo && git status`（應在 `feat/ucp-demo-implementation`, clean）
+1. 進入 umbrella：`cd /Users/sam/project/ucp-agentic-commerce-demo && git status`（應在 `feat/ucp-demo-implementation`, clean）
 2. 驗證 ucp-server tests：`cd ucp-server && npm test` → 71 / 11 passing
 3. 驗證 publisher-site build：`cd publisher-site && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
-4. 從 **Task 30** 接起（ecommerce-frontend OrderLookupPage；注意 ecommerce-frontend 仍在自己 repo `/Users/sam/project/ecommerce-frontend/`，不在 umbrella 內）
+4. 檢查 ecommerce-frontend：`cd /Users/sam/project/ecommerce-frontend && git status`（應在 `feat/ucp-order-lookup`），`npm run build:app` 應通過
+5. 從 **Task 34** 接起（`/Users/sam/project/docker-compose.yml`）
 
 ## 執行模式
 
