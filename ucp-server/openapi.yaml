@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: UCP Demo Server
+  version: 0.1.0
+  description: |
+    Google Universal Commerce Protocol (UCP) 90% 擬真實作。
+
+    **偏離官方 spec 處**：
+    - **PaymentMandate**：採 ES256 JWS + trailing `~`（SD-JWT-VC shape），無實際 selective disclosure。
+    - **RFC 9421**：response 產出 `Signature-Input` / `Content-Digest` / `Signature`；request 不強制驗簽。
+    - **Identity Linking**：未實作 OAuth 2.0 流程，agent profile 只是 string。
+    - **`/catalog`**：非 UCP 標準端點（demo-only），回應含 `X-UCP-Extension: demo-catalog`。真實 UCP 由 merchant JSON-LD 或 GMC feed 取得商品。
+    - **`/internal/demo-sign-mandate/:id`**：dev-only 端點，於 `NODE_ENV !== production` 下開放，讓 browser SDK 取得 server-signed mandate（真實情境由 buyer wallet 簽章）。
+
+servers:
+  - url: http://localhost:3001
+    description: Local dev
+  - url: https://ucp-server-<hash>-de.a.run.app
+    description: Cloud Run (fill actual URL after deployment)
+
+tags:
+  - name: checkout
+    description: UCP checkout session lifecycle
+  - name: order
+    description: Completed orders
+  - name: demo
+    description: Non-UCP endpoints for this demo
+
+components:
+  parameters:
+    UcpAgent:
+      name: UCP-Agent
+      in: header
+      required: true
+      description: 'Agent profile identifier: `profile="<url>"`'
+      schema: { type: string }
+      example: 'profile="http://localhost:3002/profile"'
+    RequestId:
+      name: Request-Id
+      in: header
+      required: true
+      schema: { type: string }
+      example: 'req-9f2c1c90'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 必填於 POST/PUT，24h TTL。重複同 key 會回快取結果。
+      schema: { type: string }
+      example: 'idem-9f2c1c90'
+    SessionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^chk_[0-9a-f]+$' }
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^ord_[0-9a-f]+$' }
+  schemas:
+    Money:
+      type: object
+      required: [type, amount, currency]
+      properties:
+        type: { type: string, enum: [subtotal, tax, shipping, total] }
+        amount: { type: integer, minimum: 0 }
+        currency: { type: string, example: TWD }
+    Quantity:
+      type: object
+      required: [original, total, fulfilled]
+      properties:
+        original: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+        fulfilled: { type: integer, minimum: 0 }
+    InputLineItem:
+      type: object
+      required: [item, quantity]
+      properties:
+        item:
+          type: object
+          required: [id]
+          properties:
+            id: { type: string }
+        quantity: { $ref: '#/components/schemas/Quantity' }
+    LineItem:
+      type: object
+      properties:
+        id: { type: string }
+        item:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+            price: { type: integer }
+            image_url: { type: string }
+        quantity: { $ref: '#/components/schemas/Quantity' }
+        totals:
+          type: array
+          items: { $ref: '#/components/schemas/Money' }
+    Destination:
+      type: object
+      properties:
+        recipient: { type: string }
+        line1: { type: string }
+        city: { type: string }
+        postal_code: { type: string }
+        country: { type: string, example: TW }
+    CheckoutSession:
+      type: object
+      properties:
+        ucp:
+          type: object
+          properties:
+            version: { type: string, example: '1.0' }
+            capabilities:
+              type: array
+              items: { type: string }
+              example: [embedded_checkout]
+            payment_handlers:
+              type: array
+              items: { type: string }
+              example: [google-pay-mock]
+        id: { type: string, pattern: '^chk_[0-9a-f]+$' }
+        status:
+          type: string
+          enum: [incomplete, ready_for_complete, completed, canceled]
+        currency: { type: string }
+        line_items:
+          type: array
+          items: { $ref: '#/components/schemas/LineItem' }
+        totals:
+          type: array
+          items: { $ref: '#/components/schemas/Money' }
+        buyer:
+          type: object
+          properties:
+            email: { type: string, format: email }
+            first_name: { type: string }
+            last_name: { type: string }
+        fulfillment:
+          type: object
+          properties:
+            destinations:
+              type: array
+              items: { $ref: '#/components/schemas/Destination' }
+            method_type: { type: string, enum: [shipping, pickup] }
+        payment:
+          type: object
+          properties:
+            instruments:
+              type: array
+              items:
+                type: object
+                properties:
+                  handler_id: { type: string }
+                  type: { type: string }
+                  credential:
+                    type: object
+                    properties:
+                      token: { type: string }
+        ap2:
+          type: object
+          properties:
+            checkout_mandate: { type: string, description: 'ES256 JWS' }
+        order:
+          type: object
+          properties:
+            id: { type: string }
+            permalink_url: { type: string, format: uri }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        links:
+          type: object
+          additionalProperties: { type: string }
+    Order:
+      allOf:
+        - $ref: '#/components/schemas/CheckoutSession'
+        - type: object
+          properties:
+            id: { type: string, pattern: '^ord_[0-9a-f]+$' }
+            checkout_id: { type: string }
+            permalink_url: { type: string, format: uri }
+    Message:
+      type: object
+      required: [type, code, content, severity]
+      properties:
+        type: { type: string, enum: [info, warning, error] }
+        code: { type: string, example: UCP_BAD_REQUEST }
+        content: { type: string }
+        severity: { type: string, enum: [low, medium, high] }
+        path: { type: string }
+    ErrorResponse:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+    CreateSessionRequest:
+      type: object
+      required: [currency, line_items]
+      properties:
+        currency: { type: string, example: TWD }
+        line_items:
+          type: array
+          items: { $ref: '#/components/schemas/InputLineItem' }
+    UpdateSessionRequest:
+      type: object
+      properties:
+        buyer:
+          $ref: '#/components/schemas/CheckoutSession/properties/buyer'
+        fulfillment:
+          $ref: '#/components/schemas/CheckoutSession/properties/fulfillment'
+        payment:
+          $ref: '#/components/schemas/CheckoutSession/properties/payment'
+    CompleteRequest:
+      type: object
+      required: [ap2, payment, expected_total]
+      properties:
+        ap2:
+          type: object
+          required: [checkout_mandate]
+          properties:
+            checkout_mandate: { type: string }
+        payment:
+          $ref: '#/components/schemas/CheckoutSession/properties/payment'
+        expected_total: { type: integer }
+        signals:
+          type: object
+          additionalProperties: { type: string }
+    MandateBundle:
+      type: object
+      required: [checkout_mandate, payment_mandate, total]
+      properties:
+        checkout_mandate: { type: string }
+        payment_mandate: { type: string, description: 'SD-JWT-VC shape (JWS~)' }
+        total: { type: integer }
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200': { description: ok }
+
+  /checkout-sessions:
+    post:
+      tags: [checkout]
+      summary: Create checkout session
+      parameters:
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSessionRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '400':
+          description: Missing / invalid headers or body
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /checkout-sessions/{id}:
+    get:
+      tags: [checkout]
+      summary: Get checkout session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    put:
+      tags: [checkout]
+      summary: Update buyer / fulfillment / payment
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSessionRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '409':
+          description: Illegal state transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /checkout-sessions/{id}/complete:
+    post:
+      tags: [checkout]
+      summary: Verify mandates and create order
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteRequest' }
+      responses:
+        '200':
+          description: Completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutSession' }
+        '400':
+          description: Mandate invalid / total mismatch
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Not in ready_for_complete
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /checkout-sessions/{id}/cancel:
+    post:
+      tags: [checkout]
+      summary: Cancel session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Canceled
+        '409':
+          description: Already completed or canceled
+
+  /orders/{id}:
+    get:
+      tags: [order]
+      summary: Get completed order
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404':
+          description: Not found
+
+  /catalog:
+    get:
+      tags: [demo]
+      summary: '[demo-only] Product catalog in Schema.org shape'
+      description: |
+        Non-UCP endpoint. Response carries `X-UCP-Extension: demo-catalog`.
+        Real UCP obtains products via merchant JSON-LD or GMC feed.
+      parameters:
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Schema.org Product[]
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  note: { type: string }
+                  products:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+  /internal/demo-sign-mandate/{id}:
+    post:
+      tags: [demo]
+      summary: '[dev-only] Server-signed checkout + payment mandate'
+      description: |
+        Signs with the ucp-server ES256 key so verification succeeds end-to-end.
+        Returns 403 when `NODE_ENV === production`.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/UcpAgent'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MandateBundle' }
+        '403':
+          description: Disabled in production
+        '404':
+          description: Session not found
+
+  /.well-known/jwks.json:
+    get:
+      summary: Public keys for mandate verification
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
