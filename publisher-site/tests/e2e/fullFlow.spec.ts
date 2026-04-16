@@ -63,3 +63,59 @@ test('api contract: /checkout-sessions returns UCP shape', async ({ request }) =
   expect(body.line_items[0].item.title).toBeTruthy();
   expect(body.totals.some((t: { type: string }) => t.type === 'total')).toBe(true);
 });
+
+const UCP_BASE = 'http://localhost:3001';
+const AGENT = 'profile="http://localhost:3002/profile"';
+
+test('rejects POST without UCP-Agent header', async ({ request }) => {
+  const r = await request.post(`${UCP_BASE}/checkout-sessions`, {
+    headers: { 'Content-Type': 'application/json' },
+    data: {},
+  });
+  expect(r.status()).toBe(400);
+  const body = await r.json();
+  expect(body.messages[0].code).toBe('UCP_MISSING_UCP_AGENT');
+});
+
+test('cancel then complete is 409 UCP_INVALID_STATE', async ({ request }) => {
+  const create = await request.post(`${UCP_BASE}/checkout-sessions`, {
+    headers: {
+      'UCP-Agent': AGENT,
+      'Request-Id': 'neg-create-1',
+      'Idempotency-Key': 'neg-create-' + Date.now(),
+      'Content-Type': 'application/json',
+    },
+    data: {
+      currency: 'TWD',
+      line_items: [
+        { item: { id: 'sony-wh1000xm6' }, quantity: { original: 1, total: 1, fulfilled: 0 } },
+      ],
+    },
+  });
+  expect(create.status()).toBe(201);
+  const { id } = await create.json();
+
+  const cancel = await request.post(`${UCP_BASE}/checkout-sessions/${id}/cancel`, {
+    headers: {
+      'UCP-Agent': AGENT,
+      'Request-Id': 'neg-cancel-1',
+      'Idempotency-Key': 'neg-cancel-' + Date.now(),
+      'Content-Type': 'application/json',
+    },
+    data: {},
+  });
+  expect(cancel.status()).toBe(200);
+
+  const complete = await request.post(`${UCP_BASE}/checkout-sessions/${id}/complete`, {
+    headers: {
+      'UCP-Agent': AGENT,
+      'Request-Id': 'neg-complete-1',
+      'Idempotency-Key': 'neg-complete-' + Date.now(),
+      'Content-Type': 'application/json',
+    },
+    data: { ap2: { checkout_mandate: 'x' }, payment: { instruments: [] }, expected_total: 0 },
+  });
+  expect(complete.status()).toBe(409);
+  const body = await complete.json();
+  expect(body.messages[0].code).toBe('UCP_INVALID_STATE');
+});
