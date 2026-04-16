@@ -1,6 +1,6 @@
 # UCP Demo 執行進度 Checkpoint
 
-> 最後更新：2026-04-16（M4 結束，準備進入 M5 聯調 + E2E）
+> 最後更新：2026-04-16（M5 結束，準備進入 M6 文件 + 部署）
 > Jira：[FRON-5348](https://guoshi.atlassian.net/browse/FRON-5348)
 
 ## 當前位置
@@ -12,7 +12,11 @@
 
 ## 進度總覽
 
-**完成 33/42 tasks（79%），umbrella ~46 commits + ecommerce-frontend 3 commits on `feat/ucp-order-lookup`，71 tests / 11 test files passing（ucp-server），tsc 0 errors（三端）**
+**完成 38/42 tasks（90%），umbrella ~52 commits + ecommerce-frontend 3 commits on `feat/ucp-order-lookup`**
+
+- ucp-server: 71 tests / 11 files passing（vitest, 1.81s）
+- publisher-site: 4 E2E passing（Playwright chromium, 6.3s），tsc 0 errors
+- ecommerce-frontend: vite build 成功
 
 ### M1 ucp-server 骨架 ✅（Task 1–10）
 - Task 1: init ucp-server — `ab338ae` + `b24c1b8` (tsconfig + engines 修正)
@@ -74,10 +78,18 @@ ecommerce-frontend 仍在獨立 repo `/Users/sam/project/ecommerce-frontend/`，
 - Task 33: M4 roll-up — 本 checkpoint 記錄
   - 跨 repo HTTP smoke（Task 30 內跑過）：create→update→sign→complete 產 `ord_dbe952f7`，permalink 正確指向 `/ecommerce-frontend/order/ord_*`，CORS allow `localhost:3000`，`/orders/:id` 回 items/totals
 
+### M5 聯調 + E2E ✅（Task 34–38）
+
+- Task 34: umbrella 內 `docker-compose.yml` — `a971494`（`../ecommerce-frontend` 相對參照；alpine wget healthcheck；service_healthy 依賴；Docker daemon 離線未實跑）
+- *port-cleanup*: `scripts/free-port.sh` + predev/prestart/prepreview/pree2e hooks — `52634ac`
+- Task 35: `@playwright/test@1.59.1` + `playwright.config.ts`（webServer 自動拉 ucp-server 3001 + publisher-site 3002）— `437b128`
+- Task 36: `tests/e2e/fullFlow.spec.ts` — `58da399`（Shadow DOM 全流程 + API contract）
+- Task 37: negative paths（missing UCP-Agent → 400、cancel→complete → 409）— `58da399` 之後的 commit
+- Task 38: M5 roll-up — 本 checkpoint 記錄；ucp-server vitest + publisher-site Playwright + ecommerce-frontend build 全綠
+
 ### 待續
 
-- **下一步**：Task 34 — `/Users/sam/project/docker-compose.yml`（三服務 local boot；compose 置於 `/Users/sam/project/` 而非 umbrella 內，以便同時參照 umbrella + ecommerce-frontend）
-- M5 聯調 + E2E（Task 34–38）
+- **下一步**：Task 39 — 三個服務各一份 README（ucp-server / publisher-site / ecommerce-frontend）
 - M6 文件 + 部署（Task 39–42）
 
 ## 關鍵設計決定（已沉澱）
@@ -94,9 +106,9 @@ ecommerce-frontend 仍在獨立 repo `/Users/sam/project/ecommerce-frontend/`，
 
 1. 進入 umbrella：`cd /Users/sam/project/ucp-agentic-commerce-demo && git status`（應在 `feat/ucp-demo-implementation`, clean）
 2. 驗證 ucp-server tests：`cd ucp-server && npm test` → 71 / 11 passing
-3. 驗證 publisher-site build：`cd publisher-site && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
+3. 驗證 publisher-site E2E：`cd publisher-site && npm run e2e` → 4 passed
 4. 檢查 ecommerce-frontend：`cd /Users/sam/project/ecommerce-frontend && git status`（應在 `feat/ucp-order-lookup`），`npm run build:app` 應通過
-5. 從 **Task 34** 接起（`/Users/sam/project/docker-compose.yml`）
+5. 從 **Task 39** 接起（三個服務各寫 README）
 
 ## 執行模式
 
